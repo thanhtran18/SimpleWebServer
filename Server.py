@@ -2,6 +2,8 @@
 
 import socket
 import time
+from os import environ
+import subprocess
 
 def respondHeader(code):
     header = ''
@@ -13,12 +15,12 @@ def respondHeader(code):
     current_date = time.strftime("%a, %d %b %Y %H:%M:%S", time.localtime())
     header += 'Date: ' + current_date + '\n'
     header += 'Server: Simple-Python-HTTP-Server\n'
-    header += 'Connection: close\n\n'
+    # header += 'Connection: close\n\n'
 
     return header
 
 
-HOST = 'guineapig.cs.umanitoba.ca'
+HOST = 'rat.cs.umanitoba.ca'
 PORT = 15086
 address = (HOST, PORT)
 mySocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -27,6 +29,7 @@ try:
     mySocket.bind((HOST, PORT))
 except Exception as e:
     print("Error in binding port: ", PORT, " --- message: ", e)
+    print("Please retry!")
 
 print("Connected successfully with: ", PORT)
 
@@ -44,19 +47,32 @@ while True:
     requestMethod = socketString.split(' ')[0]
     print("Method: %s", requestMethod)
     print("Message body: %s", socketString)
+    uri = ''
 
     if requestMethod == 'GET' or requestMethod == 'POST':
-        requestedContent = socketString.split(' ')[1].split('?')[0]
+        url = socketString.split(' ')[1]
+        arrayContent = url.split('?')
+        requestedContent = arrayContent[0]
+        if len(arrayContent) > 1:
+            uri = arrayContent[1]
 
         if requestedContent == '/':
             requestedContent = '/index.html'
 
+        isCgi = False
         requestedContent = requestedContent.strip('/')
+        if requestedContent.endswith('.cgi'):
+            isCgi = True
+            if len(uri) >= 1:
+                print("*****************I")
+                print(uri)
+                environ['QUERY_STRING'] = uri
+            procObject = subprocess.Popen(requestedContent, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+            (stdOut, stdErr) = procObject.communicate(input=None)
 
-        # socketFile =
         try:
             socketFile = open(requestedContent, 'rb')
-            #if requestMethod == 'GET':
+            # if requestMethod == 'GET':
             response = socketFile.read()
             socketFile.close()
 
@@ -72,14 +88,39 @@ while True:
                 </body>
                 </html>"""
 
-        responseMessage = headers.encode()
-        #if requestMethod == 'GET':
-        responseMessage += response
+        contentType = ''
+        code = ''
+        if isCgi:
+            responseMessage = ''
+            cgiContent = stdOut.split('\n')
+            contentType += cgiContent[0]
+            if len(cgiContent) > 1:
+                cookie = cgiContent[1]
 
-        requestSocket.send(responseMessage)
-        # socketFile.close()
+            if len(cookie) > 0:
+                environ['HTTP_COOKIE'] = cookie.split(':')[1].strip()
+            contentType += '\nConnection: close\n\n'
+            code = cgiContent[2:]
+
+            headers += contentType
+            # headers += code
+            headers = headers.encode()
+            # if requestMethod == 'GET':
+            response = ''
+            if len(code) > 0:
+                for line in code:
+                    response += line
+            # responseMessage += response
+            headers += response
+
+        else:
+            print("DSFSDGESRGDS F")
+            headers += 'Connection: close\n\n'
+            headers = headers.encode()
+            headers += response
+        print(headers)
+        requestSocket.send(headers)
         requestSocket.close()
-        #mySocket.close()
 
     else:
         print("Does not support given method!")
